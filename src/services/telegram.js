@@ -222,8 +222,8 @@ async function uploadBufferToTg(client, buffer, name, mime, onProgress) {
   while (retries > 0) {
     try {
       const result = await client.sendFile('me', {
-        // GramJS docs: file must be a Buffer with a .name attribute
-        file: Object.assign(Buffer.from(buffer), { name }),
+        // GramJS docs: file must be a Buffer/Uint8Array with a .name attribute
+        file: Object.assign(buffer, { name }),
         caption: '',
         forceDocument: true,
         progressCallback: onProgress,
