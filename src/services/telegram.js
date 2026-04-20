@@ -309,15 +309,12 @@ export async function downloadFile(manifestMessageId, onProgress) {
     if (i < chunks.length - 1) await sleep(200);
   }
 
-  // Merge all chunks
-  const merged = mergeBuffers(parts);
+  // Assemble as a Blob — avoids allocating one giant merged Uint8Array
+  const blob = new Blob(parts, { type: mime });
 
-  // Verify hash
-  const computed = await computeSha256FromBuffer(merged);
+  // Verify hash using the same chunked strategy as upload
+  const computed = await computeSha256(blob);
   if (computed !== sha256) console.warn(`Hash mismatch for ${name}`);
-
-  // Trigger browser download
-  const blob = new Blob([merged], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -357,20 +354,33 @@ async function fileToBuffer(fileOrBlob) {
   return new Uint8Array(await fileOrBlob.arrayBuffer());
 }
 
-function mergeBuffers(buffers) {
-  const total = buffers.reduce((s, b) => s + b.length, 0);
-  const out = new Uint8Array(total);
-  let offset = 0;
-  for (const buf of buffers) {
-    out.set(buf, offset);
-    offset += buf.length;
-  }
-  return out;
-}
+// SubtleCrypto.digest rejects ArrayBuffers >= 2 GB, so for large files we
+// hash each upload chunk individually and then hash the concatenation of
+// those hashes (a simple Merkle-style digest). For single-chunk files the
+// result is identical to a plain SHA-256 of the file.
+const HASH_CHUNK_SIZE = CHUNK_SIZE; // reuse the same 1.95 GB boundary
 
 async function computeSha256(file) {
-  const buf = await file.arrayBuffer();
-  return computeSha256FromBuffer(new Uint8Array(buf));
+  const totalSize = file.size;
+
+  if (totalSize <= HASH_CHUNK_SIZE) {
+    // Fast path — small enough to hash in one shot
+    const buf = await file.arrayBuffer();
+    return computeSha256FromBuffer(new Uint8Array(buf));
+  }
+
+  // Chunked path — hash each slice, then hash the list of hashes
+  const chunkHashes = [];
+  for (let start = 0; start < totalSize; start += HASH_CHUNK_SIZE) {
+    const slice = file.slice(start, Math.min(start + HASH_CHUNK_SIZE, totalSize));
+    const buf = await slice.arrayBuffer();
+    const hashHex = await computeSha256FromBuffer(new Uint8Array(buf));
+    chunkHashes.push(hashHex);
+  }
+
+  // Combine: hash the ASCII hex string of all chunk hashes joined together
+  const combined = new TextEncoder().encode(chunkHashes.join(''));
+  return computeSha256FromBuffer(combined);
 }
 
 async function computeSha256FromBuffer(buffer) {
