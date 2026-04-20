@@ -175,8 +175,7 @@ export async function uploadFile(file, onProgress) {
   const chunkMessageIds = [];
 
   if (!needsChunking) {
-    const buffer = new Uint8Array(await file.arrayBuffer());
-    const msgId = await uploadBufferToTg(client, buffer, file.name, file.type || 'application/octet-stream', (uploaded) => {
+    const msgId = await uploadBufferToTg(client, file, file.name, file.type || 'application/octet-stream', (uploaded) => {
       onProgress?.({ phase: 'uploading', percent: Math.round((uploaded / totalSize) * 100), current: 1, total: 1, bytesUploaded: uploaded, totalBytes: totalSize });
     });
     chunkMessageIds.push(msgId.toString());
@@ -184,10 +183,10 @@ export async function uploadFile(file, onProgress) {
     for (let i = 0; i < totalChunks; i++) {
       const start = i * CHUNK_SIZE;
       const end = Math.min(start + CHUNK_SIZE, totalSize);
-      const buffer = new Uint8Array(await file.slice(start, end).arrayBuffer());
+      const chunkSlice = file.slice(start, end);
       const chunkName = `${file.name}.part${String(i).padStart(4, '0')}`;
 
-      const msgId = await uploadBufferToTg(client, buffer, chunkName, 'application/octet-stream', (uploaded) => {
+      const msgId = await uploadBufferToTg(client, chunkSlice, chunkName, 'application/octet-stream', (uploaded) => {
         const overall = i * CHUNK_SIZE + uploaded;
         onProgress?.({ phase: 'uploading', current: i + 1, total: totalChunks, bytesUploaded: overall, totalBytes: totalSize, percent: Math.round((overall / totalSize) * 100) });
       });
@@ -217,13 +216,14 @@ export async function uploadFile(file, onProgress) {
   return { manifestMessageId: manifestMsg.id.toString(), manifest };
 }
 
-async function uploadBufferToTg(client, buffer, name, mime, onProgress) {
+async function uploadBufferToTg(client, fileOrBlob, name, mime, onProgress) {
+  // GramJS browser build accepts File objects natively
+  const file = fileOrBlob instanceof File ? fileOrBlob : new File([fileOrBlob], name, { type: mime });
   let retries = 3;
   while (retries > 0) {
     try {
       const result = await client.sendFile('me', {
-        // GramJS docs: file must be a Buffer/Uint8Array with a .name attribute
-        file: Object.assign(buffer, { name }),
+        file,
         caption: '',
         forceDocument: true,
         progressCallback: onProgress,
