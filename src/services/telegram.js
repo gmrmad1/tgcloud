@@ -358,18 +358,13 @@ async function fileToBuffer(fileOrBlob) {
 // hash each upload chunk individually and then hash the concatenation of
 // those hashes (a simple Merkle-style digest). For single-chunk files the
 // result is identical to a plain SHA-256 of the file.
-const HASH_CHUNK_SIZE = CHUNK_SIZE; // reuse the same 1.95 GB boundary
+// Must stay well under the 2 GB SubtleCrypto.digest hard limit
+const HASH_CHUNK_SIZE = 512 * 1024 * 1024; // 512 MB
 
 async function computeSha256(file) {
   const totalSize = file.size;
 
-  if (totalSize <= HASH_CHUNK_SIZE) {
-    // Fast path — small enough to hash in one shot
-    const buf = await file.arrayBuffer();
-    return computeSha256FromBuffer(new Uint8Array(buf));
-  }
-
-  // Chunked path — hash each slice, then hash the list of hashes
+  // Always slice — never hand a buffer >= 2 GB to SubtleCrypto
   const chunkHashes = [];
   for (let start = 0; start < totalSize; start += HASH_CHUNK_SIZE) {
     const slice = file.slice(start, Math.min(start + HASH_CHUNK_SIZE, totalSize));
@@ -378,7 +373,9 @@ async function computeSha256(file) {
     chunkHashes.push(hashHex);
   }
 
-  // Combine: hash the ASCII hex string of all chunk hashes joined together
+  if (chunkHashes.length === 1) return chunkHashes[0];
+
+  // Combine: hash the concatenated hex strings of all chunk hashes
   const combined = new TextEncoder().encode(chunkHashes.join(''));
   return computeSha256FromBuffer(combined);
 }
