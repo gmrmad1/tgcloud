@@ -175,7 +175,7 @@ export async function uploadFile(file, onProgress) {
   const chunkMessageIds = [];
 
   if (!needsChunking) {
-    const buffer = await fileToBuffer(file);
+    const buffer = new Uint8Array(await file.arrayBuffer());
     const msgId = await uploadBufferToTg(client, buffer, file.name, file.type || 'application/octet-stream', (uploaded) => {
       onProgress?.({ phase: 'uploading', percent: Math.round((uploaded / totalSize) * 100), current: 1, total: 1, bytesUploaded: uploaded, totalBytes: totalSize });
     });
@@ -184,11 +184,10 @@ export async function uploadFile(file, onProgress) {
     for (let i = 0; i < totalChunks; i++) {
       const start = i * CHUNK_SIZE;
       const end = Math.min(start + CHUNK_SIZE, totalSize);
-      const chunkBlob = file.slice(start, end);
-      const chunkBuffer = await fileToBuffer(chunkBlob);
+      const buffer = new Uint8Array(await file.slice(start, end).arrayBuffer());
       const chunkName = `${file.name}.part${String(i).padStart(4, '0')}`;
 
-      const msgId = await uploadBufferToTg(client, chunkBuffer, chunkName, 'application/octet-stream', (uploaded) => {
+      const msgId = await uploadBufferToTg(client, buffer, chunkName, 'application/octet-stream', (uploaded) => {
         const overall = i * CHUNK_SIZE + uploaded;
         onProgress?.({ phase: 'uploading', current: i + 1, total: totalChunks, bytesUploaded: overall, totalBytes: totalSize, percent: Math.round((overall / totalSize) * 100) });
       });
@@ -219,15 +218,13 @@ export async function uploadFile(file, onProgress) {
 }
 
 async function uploadBufferToTg(client, buffer, name, mime, onProgress) {
-  // Convert buffer to File for GramJS
-  const blob = new Blob([buffer], { type: mime });
-  const file = new File([blob], name, { type: mime });
-
   let retries = 3;
   while (retries > 0) {
     try {
       const result = await client.sendFile('me', {
-        file,
+        file: buffer,        // GramJS accepts Uint8Array directly
+        fileName: name,
+        mimeType: mime,
         caption: '',
         forceDocument: true,
         progressCallback: onProgress,
@@ -350,9 +347,6 @@ function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
 
-async function fileToBuffer(fileOrBlob) {
-  return new Uint8Array(await fileOrBlob.arrayBuffer());
-}
 
 // SubtleCrypto.digest rejects ArrayBuffers >= 2 GB, so for large files we
 // hash each upload chunk individually and then hash the concatenation of
