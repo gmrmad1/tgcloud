@@ -23,11 +23,10 @@ const MANIFEST_PREFIX_V2 = 'ULM2_MANIFEST';
 // Keep MANIFEST_PREFIX as alias for any code that imported it
 export const MANIFEST_PREFIX = MANIFEST_PREFIX_V1;
 
-// 500 MB per chunk — GramJS loads the entire chunk into RAM via Response.arrayBuffer()
-// before uploading. Keeping chunks at 500 MB prevents the browser stalling on
-// chunk 2+ due to memory pressure on large files. Telegram's cap is 2 GB per file
-// so 500 MB is well within limits.
-export const CHUNK_SIZE = 500 * 1024 * 1024;
+// 512 MB per chunk — well within Telegram's 2 GB per file limit.
+// GramJS buffers each chunk in RAM before uploading, so keeping this at 512 MB
+// avoids memory pressure on large files while still being efficient.
+export const CHUNK_SIZE = 512 * 1024 * 1024;
 
 const STORAGE_KEY_SESSION = 'tgcloud_session';
 const STORAGE_KEY_CREDS   = 'tgcloud_creds';

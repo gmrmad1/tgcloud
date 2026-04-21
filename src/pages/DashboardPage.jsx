@@ -122,7 +122,7 @@ function UploadZone({ onFiles, currentFolder }) {
         <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3" />
       </svg>
       <span className={s.zoneText}>{drag ? 'Release to upload' : <><u>Click to browse</u> or drop files</>}</span>
-      <span className={s.zoneHint}>Uploading to <strong>{folderLabel}</strong> · Any file · &gt;1.95 GB auto-chunked</span>
+      <span className={s.zoneHint}>Uploading to <strong>{folderLabel}</strong> · Any file · &gt;512 MB auto-chunked</span>
     </div>
   );
 }
