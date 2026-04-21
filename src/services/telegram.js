@@ -23,8 +23,11 @@ const MANIFEST_PREFIX_V2 = 'ULM2_MANIFEST';
 // Keep MANIFEST_PREFIX as alias for any code that imported it
 export const MANIFEST_PREFIX = MANIFEST_PREFIX_V1;
 
-// 1.95 GB — safely below Telegram's 2 GB per-file limit
-export const CHUNK_SIZE = Math.floor(1.95 * 1024 * 1024 * 1024);
+// 500 MB per chunk — GramJS loads the entire chunk into RAM via Response.arrayBuffer()
+// before uploading. Keeping chunks at 500 MB prevents the browser stalling on
+// chunk 2+ due to memory pressure on large files. Telegram's cap is 2 GB per file
+// so 500 MB is well within limits.
+export const CHUNK_SIZE = 500 * 1024 * 1024;
 
 const STORAGE_KEY_SESSION = 'tgcloud_session';
 const STORAGE_KEY_CREDS   = 'tgcloud_creds';
@@ -127,8 +130,10 @@ export async function uploadFile(file, onProgress, folder = '') {
   const chunkMessageIds = [];
 
   if (!needsChunking) {
-    const msgId = await uploadFileToTg(client, file, file.name, file.type || 'application/octet-stream', (uploaded) => {
-      onProgress?.({ phase: 'uploading', percent: Math.round((uploaded / totalSize) * 100), current: 1, total: 1, bytesUploaded: uploaded, totalBytes: totalSize });
+    const msgId = await uploadFileToTg(client, file, file.name, file.type || 'application/octet-stream', (fraction) => {
+      // GramJS progressCallback passes a 0–1 fraction
+      const bytesUploaded = fraction * totalSize;
+      onProgress?.({ phase: 'uploading', percent: Math.round(fraction * 100), current: 1, total: 1, bytesUploaded, totalBytes: totalSize });
     });
     chunkMessageIds.push(msgId.toString());
   } else {
@@ -137,8 +142,11 @@ export async function uploadFile(file, onProgress, folder = '') {
       const end = Math.min(start + CHUNK_SIZE, totalSize);
       const chunkSlice = file.slice(start, end);
       const chunkName = `${file.name}.part${String(i).padStart(4, '0')}`;
-      const msgId = await uploadFileToTg(client, chunkSlice, chunkName, 'application/octet-stream', (uploaded) => {
-        const overall = i * CHUNK_SIZE + uploaded;
+      const chunkSize = end - start;
+      const msgId = await uploadFileToTg(client, chunkSlice, chunkName, 'application/octet-stream', (fraction) => {
+        // GramJS progressCallback passes a 0–1 fraction, not bytes
+        const bytesThisChunk = fraction * chunkSize;
+        const overall = start + bytesThisChunk;
         onProgress?.({ phase: 'uploading', current: i + 1, total: totalChunks, bytesUploaded: overall, totalBytes: totalSize, percent: Math.round((overall / totalSize) * 100) });
       });
       chunkMessageIds.push(msgId.toString());
